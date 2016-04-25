@@ -22,6 +22,17 @@ Key KeyC(A6, INPUT_PULLUP);
 #include <Adafruit_VS1053.h>
 #include <SD.h>
 
+#include <EEPROM.h>
+#include <Wire.h>
+#define EEPROM_write(address, p) {int i = 0; byte *pp = (byte*)&(p);for(; i < sizeof(p); i++) EEPROM.write(address+i, pp[i]);}
+#define EEPROM_read(address, p)  {int i = 0; byte *pp = (byte*)&(p);for(; i < sizeof(p); i++) pp[i]=EEPROM.read(address+i);}
+
+struct config_type
+{
+  int EEPROM_music;
+  int EEPROM_val;
+};
+
 // define the pins used
 //#define CLK 13       // SPI Clock, shared with SD card
 //#define MISO 12      // Input data, from VS1053/SD card
@@ -51,8 +62,9 @@ unsigned long timer1lastTime = millis();
 unsigned long timer2lastTime = millis();
 
 boolean play_pose;
+boolean clean = true;
 
-int volnumber;
+int volnumber = 4;
 int vol_num[11] = {120, 110, 100, 90, 80, 70, 60, 50, 40, 30, 20};
 int musicnumber;
 String music_num[15] = {"1.mp3", "2.mp3", "3.mp3", "4.mp3", "5.mp3", "6.mp3", "7.mp3", "8.mp3", "9.mp3", "10.mp3", "12.mp3", "12.mp3", "13.mp3", "14.mp3", "15.mp3"};
@@ -60,6 +72,22 @@ String music_num[15] = {"1.mp3", "2.mp3", "3.mp3", "4.mp3", "5.mp3", "6.mp3", "7
 void choose_music(const char *_name)
 {
   musicPlayer.startPlayingFile(_name);
+}
+
+void eeprom_write()
+{
+  config_type config;// 定义结构变量config，并定义config的内容
+  if (clean == true)
+  {
+    config.EEPROM_music = musicnumber;
+    config.EEPROM_val = volnumber;
+  }
+  else
+  {
+    config.EEPROM_music = 0;
+    config.EEPROM_val = 0;
+  }
+  EEPROM_write(0, config);         // 变量config存储到EEPROM，地址0写入
 }
 
 void setup() {
@@ -74,9 +102,6 @@ void setup() {
 
   SD.begin(CARDCS);    // initialise the SD card
 
-  // Set volume for left, right channels. lower numbers == louder volume!
-  musicPlayer.setVolume(120, 120);
-
   // Timer interrupts are not suggested, better to use DREQ interrupt!
   //musicPlayer.useInterrupt(VS1053_FILEPLAYER_TIMER0_INT); // timer int
 
@@ -84,9 +109,19 @@ void setup() {
   // audio playing
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);  // DREQ int
 
+  /*EEPROM读取赋值*/
+  config_type config_readback;
+  EEPROM_read(0, config_readback);
+
+  musicnumber = config_readback.EEPROM_music;
+  volnumber = config_readback.EEPROM_val;
+
+  // Set volume for left, right channels. lower numbers == louder volume!
+  musicPlayer.setVolume(vol_num[volnumber], vol_num[volnumber]);
+
   // Play one file, don't return until complete
   Serial.println(F("Playing track 001"));
-  musicPlayer.startPlayingFile("1.mp3");
+  choose_music(music_num[musicnumber].c_str());
 }
 
 void loop() {
@@ -106,9 +141,11 @@ void loop() {
   switch (KeyA.read(170, 270)) {
     case SHORT_PRESS:
       Serial.println("---down_SHORT_PRESS---");
+      play_pose = true;
       musicnumber--;
       if (musicnumber < 0)
         musicnumber = 14;
+      eeprom_write();
       choose_music(music_num[musicnumber].c_str());
       break;
     case LONG_PRESS:
@@ -118,6 +155,7 @@ void loop() {
         volnumber--;
         if (volnumber < 0)
           volnumber = 0;
+        eeprom_write();
         musicPlayer.setVolume(vol_num[volnumber], vol_num[volnumber]);
         timer1lastTime = millis();
       }
@@ -126,9 +164,11 @@ void loop() {
 
   switch (KeyB.read(270, 370)) {
     case SHORT_PRESS:
+      play_pose = true;
       musicnumber++;
       if (musicnumber > 14)
         musicnumber = 0;
+      eeprom_write();
       choose_music(music_num[musicnumber].c_str());
       Serial.println("---up_SHORT_PRESS---");
       break;
@@ -139,6 +179,7 @@ void loop() {
         volnumber++;
         if (volnumber > 10)
           volnumber = 10;
+        eeprom_write();
         musicPlayer.setVolume(vol_num[volnumber], vol_num[volnumber]);
         timer2lastTime = millis();
       }
